@@ -1,180 +1,166 @@
-# ALOHA: A Low-cost Open-source Hardware System for Bimanual Teleoperation
+# Aloha setup on Ubuntu 22.04
 
-#### Project Website: https://tonyzhaozh.github.io/aloha/
+This project is forked from  [ALOHA: A Low-cost Open-source Hardware System for Bimanual Teleoperation](https://tonyzhaozh.github.io/aloha/).
 
-This codebase contains implementation for teleoperation and data collection with the ALOHA hardware.
-To build ALOHA, follow the [Hardware Assembly Tutorial](https://docs.google.com/document/d/1sgRZmpS7HMcZTPfGy3kAxDrqFMtNNzmK-yVtX5cKYME/edit?usp=sharing) and the quick start guide below.
-To train imitation learning algorithms, you would also need to install [ACT](https://github.com/tonyzhaozh/act).
-
-### Repo Structure
-- ``config``: a config for each robot, designating the port they should bind to, more details in quick start guide.
-- ``launch``: a ROS launch file for all 4 cameras and all 4 robots.
-- ``aloha_scripts``: python code for teleop and data collection
-
-## Quick start guide
-
-### Hardware selection 
-
-We suggest using a "heavy-duty" computer if possible. 
-
-*In particular, at least 6 USB3 ports are needed. 4 ports for robot connections and 2 ports for cameras.* We have seen cases that a machine was not able to stably connect to all 4 robot arms simultaneously over USB, especially when USB hubs are used.
-
-### Software selection -- OS:
-
-Currently tested and working configurations: 
-- :white_check_mark: Ubuntu 18.04 + ROS 1 noetic
-- :white_check_mark: Ubuntu 20.04 + ROS 1 noetic
-
-Ongoing testing (compatibility effort underway):
-- :construction: ROS 2
-
-### Software installation - ROS:
-1. Install ROS and interbotix software following https://docs.trossenrobotics.com/interbotix_xsarms_docs/
-2. This will create the directory ``~/interbotix_ws`` which contains ``src``.
-3. git clone this repo inside ``~/interbotix_ws/src``
-4. ``source /opt/ros/noetic/setup.sh && source ~/interbotix_ws/devel/setup.sh``
-5. ``sudo apt-get install ros-noetic-usb-cam && sudo apt-get install ros-noetic-cv-bridge``
-6. run ``catkin_make`` inside ``~/interbotix_ws``, make sure the build is successful
-7. go to ``~/interbotix_ws/src/interbotix_ros_toolboxes/interbotix_xs_toolbox/interbotix_xs_modules/src/interbotix_xs_modules/arm.py``, find function ``publish_positions``.
-   Change ``self.T_sb = mr.FKinSpace(self.robot_des.M, self.robot_des.Slist, self.joint_commands)`` to ``self.T_sb = None``.
-   This prevents the code from calculating FK at every step which delays teleoperation.
-### Hardware installation:
-
-The goal of this section is to run ``roslaunch aloha 4arms_teleop.launch``, which starts
-communication with 4 robots and 4 cameras. It should work after finishing the following steps:
-
-Step 1: Connect 4 robots to the computer via USB, and power on. *Do not use extension cable or usb hub*.
-- To check if the robot is connected, install dynamixel wizard [here](https://emanual.robotis.com/docs/en/software/dynamixel/dynamixel_wizard2/)
-- Dynamixel wizard is a very helpful debugging tool that connects to individual motors of the robot. It allows
-things such as rebooting the motor (very useful!), torque on/off, and sending commands.
-However, it has no knowledge about the kinematics of the robot, so be careful about collisions.
-The robot *will* collapse if motors are torque off i.e. there is no automatically engaged brakes in joints.
-- Open Dynamixel wizard, go into ``options`` and select:
-  - Protocal 2.0
-  - All ports
-  - 1000000 bps
-  - ID range from 0-10
-- Note: repeat above everytime before you scan.
-- Then hit ``Scan``. There should be 4 devices showing up, each with 9 motors.
+The original Aloha software is built based on Ubuntu 20.04 with ROS Noetic. This doc serves as a guidance to set up aloha tele-operation with Ubuntu 22.04 and ROS2 Humble.
 
 
-- One issue that arises is the port each robot binds to can change over time, e.g. a robot that
-is initially ``ttyUSB0`` might suddenly become ``ttyUSB5``. To resolve this, we bind each robot to a fixed symlink
-port with the following mapping:
-  - ``ttyDXL_master_right``: right master robot (master: the robot that the operator would be holding)
-  - ``ttyDXL_puppet_right``: right puppet robot (puppet: the robot that performs the task)
-  - ``ttyDXL_master_left``: left master robot
-  - ``ttyDXL_puppet_left``: left puppet robot
-- Take ``ttyDXL_master_right``: right master robot as an example:
-  1. Find the port that the right master robot is currently binding to, e.g. ``ttyUSB0``
-  2. run ``udevadm info --name=/dev/ttyUSB0 --attribute-walk | grep serial`` to obtain the serial number. Use the first one that shows up, the format should look similar to ``FT6S4DSP``.
-  3. ``sudo vim /etc/udev/rules.d/99-fixed-interbotix-udev.rules`` and add the following line: 
 
-         SUBSYSTEM=="tty", ATTRS{serial}=="<serial number here>", ENV{ID_MM_DEVICE_IGNORE}="1", ATTR{device/latency_timer}="1", SYMLINK+="ttyDXL_master_right"
-
-  4. This will make sure the right master robot is *always* binding to ``ttyDXL_master_right``
-  5. Repeat with the rest of 3 arms.
-- To apply the changes, run ``sudo udevadm control --reload && sudo udevadm trigger``
-- If successful, you should be able to find ``ttyDXL*`` in your ``/dev``
-
-Step 2: Set max current for gripper motors
-- Open Dynamixel Wizard, and select the wrist motor for puppet arms. The name of it should be ```[ID:009] XM430-W350```
-- Tip: the LED on the base of robot will flash when it is talking to Dynamixel Wizard. This will help determine which robot is selected. 
-- Find ``38 Current Limit``, enter ``200``, then hit ``save`` at the bottom.
-- Repeat this for both puppet robots.
-- This limits the max current through gripper motors, to prevent overloading errors.
+## Steps to go through
+1. [Step 1](#hardware-setup): Hardware setup
+2. [Step 2](#optional-ros-pkgs): Install [ROS2 Humble](https://docs.ros.org/en/humble/Installation.html)
+3. [Step 3](#interbotix-workspace-setup): Set up the robot workspace with `interbotix_ros_toolbox`
+4. [Step 4](https://github.com/tonyzhaozh/aloha#hardware-installation): Follow the hardware installation guidance in the original repo
+5. [Step 5](#aloha): Set up Aloha
+6. [Step 6](#test-and-run): Test and run
 
 
-Step 3: Setup 4 cameras
-- You may use usb hub here, but *maximum 2 cameras per hub for reasonable latency*.
-- To make sure all 4 cameras are binding to a consistent port, similar steps are needed.
-- Cameras are by default binding to ``/dev/video{0, 1, 2...}``, while we want to have symlinks ``{CAM_RIGHT_WRIST, CAM_LEFT_WRIST, CAM_LOW, CAM_HIGH}``
-- Take ``CAM_RIGHT_WRIST`` as an example, and let's say it is now binding to ``/dev/video0``. run ``udevadm info --name=/dev/video0 --attribute-walk | grep serial`` to obtain it's serial. Use the first one that shows up, the format should look similar to ``0E1A2B2F``.
-- Then ``sudo vim /etc/udev/rules.d/99-fixed-interbotix-udev.rules`` and add the following line 
 
-      SUBSYSTEM=="video4linux", ATTRS{serial}=="<serial number here>", ATTR{index}=="0", ATTRS{idProduct}=="085c", ATTR{device/latency_timer}="1", SYMLINK+="CAM_RIGHT_WRIST"
+## Details and tips
 
-- Repeat this for ``{CAM_LEFT_WRIST, CAM_LOW, CAM_HIGH}`` in additional to ``CAM_RIGHT_WRIST``
-- To apply the changes, run ``sudo udevadm control --reload && sudo udevadm trigger``
-- If successful, you should be able to find ``{CAM_RIGHT_WRIST, CAM_LEFT_WRIST, CAM_LOW, CAM_HIGH}`` in your ``/dev``
+### Hardware setup
+- Hardware [doc](https://docs.google.com/document/d/1sgRZmpS7HMcZTPfGy3kAxDrqFMtNNzmK-yVtX5cKYME/edit?pli=1&tab=t.0)
+- **Proper** micro-usb cables & 2.5 dc power cables; `lsusb` to check the connection
+- Follow the hardware installation in original repo
+	- *Dynamixel wizard* can work normally on 22.04, no need to worry 
 
-At this point, have a new terminal
+
+
+### Optional ROS pkgs
+
+```bash
+sudo apt install ros-humble-rqt ros-humble-rqt-graph
+```
+
+
+
+### Interbotix workspace setup
+
+```bash
+curl 'https://raw.githubusercontent.com/Interbotix/interbotix_ros_manipulators/main/interbotix_ros_xsarms/install/amd64/xsarm_amd64_install.sh' > xsarm_amd64_install.sh
+chmod +x xsarm_amd64_install.sh
+./xsarm_amd64_install.sh -d humble
+```
+
+**Note that:**
+- In step 7 of the original software setup, the corresponding script in ROS2 package is `interbotix_ws/src/interbotix_ros_toolboxes/interbotix_xs_toolbox/interbotix_xs_modules/interbotix_xs_modules/xs_robot/arm.py`. However, the `publish_positions` function in ROS2 pkg is a cpp func. check before you modify the code. 
+
+
+
+### Aloha
+
+1. Clone the repo
+    ```bash
+    cd interbotix_ws/src
+    git clone https://github.com/Haoyuelll/aloha_ros2.git
+    mv aloha_ros2 aloha # You may change the pkg name to avoid potential errors
+    ```
     
-    conda deactivate # if conda shows up by default
-    source /opt/ros/noetic/setup.sh && source ~/interbotix_ws/devel/setup.sh
-    roslaunch aloha 4arms_teleop.launch
-
-If no error message is showing up, the computer should be successfully connected to all 4 cameras and all 4 robots.
-
-#### Trouble shooting
-- Make sure Dynamixel Wizard is disconnected, and no app is using webcam's stream. It will prevent ROS from connecting to
-these devices.
-
-### Software installation - Conda:
-
-    conda create -n aloha python=3.8.10
-    conda activate aloha
-    pip install torchvision
-    pip install torch
-    pip install pyquaternion
-    pip install pyyaml
-    pip install rospkg
-    pip install pexpect
-    pip install mujoco==2.3.7
-    pip install dm_control==1.0.14
-    pip install opencv-python
-    pip install matplotlib
-    pip install einops
-    pip install packaging
-    pip install h5py
-
-### Testing teleoperation
-
-**Notice**: Before running the commands below, be sure to place all 4 robots in their sleep positions, and open master robot's gripper. 
-All robots will rise to a height that is easy for teleoperation.
-
-    # ROS terminal
-    conda deactivate
-    source /opt/ros/noetic/setup.sh && source ~/interbotix_ws/devel/setup.sh
-    roslaunch aloha 4arms_teleop.launch
     
-    # Right hand terminal
-    conda activate aloha
-    cd ~/interbotix_ws/src/aloha/aloha_scripts
-    python3 one_side_teleop.py right
+2. Build ros pkg
+  
+    ```bash
+    # Deactivate to avoid python conflicts if you are using conda
+    conda deactivate 
     
-    # Left hand terminal
+    cd interbotix_ws
+    
+    # if you wish to rebuild the whole workspace
+    rm -rf build/ install/ log/
+    colcon build
+    
+    # if you only wish to build aloha pkg
+    colcon build --packages-select aloha
+    
+    source ~/interbotix_ws/install/setup.sh
+    
+    # or echo it to the shell configuration 
+    echo "source ~/interbotix_ws/install/setup.bash" >> ~/.bashrc 
+    echo "source ~/interbotix_ws/install/setup.zsh" >> ~/.zshrc 
+    ```
+  
+    Building the whole workspace takes about 30 secs (and instantly for aloha pkg alone).
+    Then use `ros2 pkg list | grep aloha` to check pkg availability.
+
+
+
+
+4. Setup conda env
+
+  - In original repo, the env is built based on `python=3.8.10`, while ros2 humble requires `python=3.10.x`.
+  - All other dependencies are written in `requirements.txt`
+
+    ```bash
+    conda create -n aloha python=3.10
     conda activate aloha
-    cd ~/interbotix_ws/src/aloha/aloha_scripts
-    python3 one_side_teleop.py left
-
-The teleoperation will start when the master side gripper is closed.
+    pip install -r requirements.txt
+    ```
 
 
-## Example Usages
 
-To set up a new terminal, run:
+### Test and run
 
-    conda activate aloha
-    cd ~/interbotix_ws/src/aloha/aloha_scripts
+1. Check robot status
+
+   - Check usb connection
+     - The red light on robot board will flash if connected correctly. 
+     - `lsusb` will show 4 robots
+   - Check power connection
+     - Use `Dynamixel Wizard` to check if all 4 robots are connect correctly (guidance [here](https://github.com/tonyzhaozh/aloha?tab=readme-ov-file#hardware-installation))
+       - TL;DR: start the wizard, scan; click any motor will make the light flash on the corresponding robot board. Check which robot is missing.
+
+   
+
+2. Commands to run
+
+   We need three terminals to run the tele-op:
+
+   - In terminal 1, launch the robot and ros broadcast
+   	```bash
+   	source /opt/ros/noetic/setup.sh && source ~/interbotix_ws/devel/setup.sh
+   	ros2 launch aloha 4arms_teleop.launch.py
+   	```
+
+   	If any error pop up, check the usb and power connection.
+
+   - In terminal 2, run tele-op for the left group:
+
+   	```bash
+   	conda activate aloha
+   	export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6 # This solve the c++ lib conflict between the py script and ros2
+   	cd ~/interbotix_ws/src/aloha/aloha_scripts/ 
+   	python3 one_side_teleop.py left
+   	```
+
+   - In terminal 3, run tele-op for the right group:
+
+     ```bash
+     conda activate aloha
+     export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libstdc++.so.6 # This solve the c++ lib conflict between the py script and ros2
+     cd ~/interbotix_ws/src/aloha/aloha_scripts/ 
+     python3 one_side_teleop.py right
+     ```
 
 
-The ``one_side_teleop.py`` we ran is for testing teleoperation and has no data collection. To collect data for an episode, run:
 
-    python3 record_episodes.py --dataset_dir <data save dir> --episode_idx 0
+3. Manipulate **safely**
 
-This will store a hdf5 file at ``<data save dir>``.
-To change episode length and other params, edit ``constants.py`` directly.
+   - After starting the tele-operation script, all robots will move to an easy-to-manipulate position.
 
-To visualize the episode collected, run:
+   - (Move the master robot to a proper position if the joints are not mapped correctly)
 
-    python3 visualize_episodes.py --dataset_dir <data save dir> --episode_idx 0
+   - Close the gripper on mater to start tele-op .
 
-To replay the episode collected with real robot, run:
+      
 
-    python3 replay_episodes.py --dataset_dir <data save dir> --episode_idx 0
+   **Warnings**:
 
-To lower 4 robots before e.g. cutting off power, run:
+   - Handles of the master robot should head down.
 
-    python3 sleep.py
+   - The puppet robot might fall and crash the table if the master is not at good position.
 
+   - Don't do anything with hard force when the torque is on.
+
+   - Shut down the power supply and usb connection when finished.
+
+     

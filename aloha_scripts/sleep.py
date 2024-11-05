@@ -1,4 +1,4 @@
-from interbotix_xs_modules.arm import InterbotixManipulatorXS
+from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
 from robot_utils import move_arms, torque_on
 
 def main():

@@ -11,7 +11,7 @@ from robot_utils import Recorder, ImageRecorder, get_arm_gripper_positions
 from robot_utils import move_arms, torque_on, torque_off, move_grippers
 from real_env import make_real_env, get_action
 
-from interbotix_xs_modules.arm import InterbotixManipulatorXS
+from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
 
 import IPython
 e = IPython.embed
@@ -20,19 +20,19 @@ e = IPython.embed
 def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_bot_right):
     """ Move all 4 robots to a pose where it is easy to start demonstration """
     # reboot gripper motors, and set operating modes for all motors
-    puppet_bot_left.dxl.robot_reboot_motors("single", "gripper", True)
-    puppet_bot_left.dxl.robot_set_operating_modes("group", "arm", "position")
-    puppet_bot_left.dxl.robot_set_operating_modes("single", "gripper", "current_based_position")
-    master_bot_left.dxl.robot_set_operating_modes("group", "arm", "position")
-    master_bot_left.dxl.robot_set_operating_modes("single", "gripper", "position")
-    # puppet_bot_left.dxl.robot_set_motor_registers("single", "gripper", 'current_limit', 1000) # TODO(tonyzhaozh) figure out how to set this limit
+    puppet_bot_left.core.robot_reboot_motors("single", "gripper", True)
+    puppet_bot_left.core.robot_set_operating_modes("group", "arm", "position")
+    puppet_bot_left.core.robot_set_operating_modes("single", "gripper", "current_based_position")
+    master_bot_left.core.robot_set_operating_modes("group", "arm", "position")
+    master_bot_left.core.robot_set_operating_modes("single", "gripper", "position")
+    # puppet_bot_left.core.robot_set_motor_registers("single", "gripper", 'current_limit', 1000) # TODO(tonyzhaozh) figure out how to set this limit
 
-    puppet_bot_right.dxl.robot_reboot_motors("single", "gripper", True)
-    puppet_bot_right.dxl.robot_set_operating_modes("group", "arm", "position")
-    puppet_bot_right.dxl.robot_set_operating_modes("single", "gripper", "current_based_position")
-    master_bot_right.dxl.robot_set_operating_modes("group", "arm", "position")
-    master_bot_right.dxl.robot_set_operating_modes("single", "gripper", "position")
-    # puppet_bot_left.dxl.robot_set_motor_registers("single", "gripper", 'current_limit', 1000) # TODO(tonyzhaozh) figure out how to set this limit
+    puppet_bot_right.core.robot_reboot_motors("single", "gripper", True)
+    puppet_bot_right.core.robot_set_operating_modes("group", "arm", "position")
+    puppet_bot_right.core.robot_set_operating_modes("single", "gripper", "current_based_position")
+    master_bot_right.core.robot_set_operating_modes("group", "arm", "position")
+    master_bot_right.core.robot_set_operating_modes("single", "gripper", "position")
+    # puppet_bot_left.core.robot_set_motor_registers("single", "gripper", 'current_limit', 1000) # TODO(tonyzhaozh) figure out how to set this limit
 
     torque_on(puppet_bot_left)
     torque_on(master_bot_left)
@@ -48,8 +48,8 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
 
     # press gripper to start data collection
     # disable torque for only gripper joint of master robot to allow user movement
-    master_bot_left.dxl.robot_torque_enable("single", "gripper", False)
-    master_bot_right.dxl.robot_torque_enable("single", "gripper", False)
+    master_bot_left.core.robot_torque_enable("single", "gripper", False)
+    master_bot_right.core.robot_torque_enable("single", "gripper", False)
     print(f'Close the gripper to start')
     close_thresh = -0.3
     pressed = False

@@ -9,7 +9,7 @@ from constants import PUPPET_GRIPPER_POSITION_NORMALIZE_FN, PUPPET_GRIPPER_VELOC
 from constants import PUPPET_GRIPPER_JOINT_OPEN, PUPPET_GRIPPER_JOINT_CLOSE
 from robot_utils import Recorder, ImageRecorder
 from robot_utils import setup_master_bot, setup_puppet_bot, move_arms, move_grippers
-from interbotix_xs_modules.arm import InterbotixManipulatorXS
+from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
 from interbotix_xs_msgs.msg import JointSingleCommand
 
 import IPython
@@ -114,8 +114,8 @@ class RealEnv:
     def reset(self, fake=False):
         if not fake:
             # Reboot puppet robot gripper motors
-            self.puppet_bot_left.dxl.robot_reboot_motors("single", "gripper", True)
-            self.puppet_bot_right.dxl.robot_reboot_motors("single", "gripper", True)
+            self.puppet_bot_left.core.robot_reboot_motors("single", "gripper", True)
+            self.puppet_bot_right.core.robot_reboot_motors("single", "gripper", True)
             self._reset_joints()
             self._reset_gripper()
         return dm_env.TimeStep(
@@ -142,11 +142,11 @@ class RealEnv:
 def get_action(master_bot_left, master_bot_right):
     action = np.zeros(14) # 6 joint + 1 gripper, for two arms
     # Arm actions
-    action[:6] = master_bot_left.dxl.joint_states.position[:6]
-    action[7:7+6] = master_bot_right.dxl.joint_states.position[:6]
+    action[:6] = master_bot_left.core.joint_states.position[:6]
+    action[7:7+6] = master_bot_right.core.joint_states.position[:6]
     # Gripper actions
-    action[6] = MASTER_GRIPPER_JOINT_NORMALIZE_FN(master_bot_left.dxl.joint_states.position[6])
-    action[7+6] = MASTER_GRIPPER_JOINT_NORMALIZE_FN(master_bot_right.dxl.joint_states.position[6])
+    action[6] = MASTER_GRIPPER_JOINT_NORMALIZE_FN(master_bot_left.core.joint_states.position[6])
+    action[7+6] = MASTER_GRIPPER_JOINT_NORMALIZE_FN(master_bot_right.core.joint_states.position[6])
 
     return action
 
