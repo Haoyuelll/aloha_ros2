@@ -4,6 +4,7 @@ import h5py
 import argparse
 import numpy as np
 from tqdm import tqdm
+import threading
 
 from constants import DT, START_ARM_POSE, TASK_CONFIGS
 from constants import MASTER_GRIPPER_JOINT_MID, PUPPET_GRIPPER_JOINT_CLOSE, PUPPET_GRIPPER_JOINT_OPEN
@@ -12,11 +13,14 @@ from robot_utils import move_arms, torque_on, torque_off, move_grippers
 from real_env import make_real_env, get_action
 
 from interbotix_xs_modules.xs_robot.arm import InterbotixManipulatorXS
-
+from one_side_teleop import prep_robots, press_to_start
 import IPython
 e = IPython.embed
 
-
+from interbotix_common_modules.common_robot.robot import (
+    create_interbotix_global_node,
+    robot_startup
+)
 def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_bot_right):
     """ Move all 4 robots to a pose where it is easy to start demonstration """
     # reboot gripper motors, and set operating modes for all motors
@@ -34,6 +38,8 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
     master_bot_right.core.robot_set_operating_modes("single", "gripper", "position")
     # puppet_bot_left.core.robot_set_motor_registers("single", "gripper", 'current_limit', 1000) # TODO(tonyzhaozh) figure out how to set this limit
 
+    # breakpoint()
+
     torque_on(puppet_bot_left)
     torque_on(master_bot_left)
     torque_on(puppet_bot_right)
@@ -41,9 +47,16 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
 
     # move arms to starting position
     start_arm_qpos = START_ARM_POSE[:6]
-    move_arms([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], [start_arm_qpos] * 4, move_time=1.5)
+    combined_pos = [[p for p in start_arm_qpos]]
+    combined_pos.append([p for p in start_arm_qpos])
+    # -- flip the joint angles
+    combined_pos[1][1] = -combined_pos[1][1]
+    combined_pos[1][2] = -combined_pos[1][2]
+    move_arms([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], combined_pos * 2, move_time=1.5)
+    # move_arms([master_bot_left, puppet_bot_left], combined_pos, move_time=1.5)
     # move grippers to starting position
     move_grippers([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], [MASTER_GRIPPER_JOINT_MID, PUPPET_GRIPPER_JOINT_CLOSE] * 2, move_time=0.5)
+    # move_grippers([master_bot_left, puppet_bot_left], [MASTER_GRIPPER_JOINT_MID, PUPPET_GRIPPER_JOINT_CLOSE], move_time=0.5)
 
 
     # press gripper to start data collection
@@ -56,24 +69,29 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
     while not pressed:
         gripper_pos_left = get_arm_gripper_positions(master_bot_left)
         gripper_pos_right = get_arm_gripper_positions(master_bot_right)
-        if (gripper_pos_left < close_thresh) and (gripper_pos_right < close_thresh):
+        print(gripper_pos_left, gripper_pos_right)
+        if (gripper_pos_left < close_thresh) and (gripper_pos_right < close_thresh): # changed to OR temporarily
             pressed = True
         time.sleep(DT/10)
     torque_off(master_bot_left)
     torque_off(master_bot_right)
     print(f'Started!')
 
-
 def capture_one_episode(dt, max_timesteps, camera_names, dataset_dir, dataset_name, overwrite):
     print(f'Dataset name: {dataset_name}')
 
     # source of data
-    master_bot_left = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
-                                              robot_name=f'master_left', init_node=True)
-    master_bot_right = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
-                                               robot_name=f'master_right', init_node=False)
-    env = make_real_env(init_node=False, setup_robots=False)
+    global_node = create_interbotix_global_node()
 
+    puppet_bot_left = InterbotixManipulatorXS(robot_model="vx300s", group_name="arm", gripper_name="gripper", robot_name=f'puppet_left', node=global_node)
+    puppet_bot_right = InterbotixManipulatorXS(robot_model="vx300s", group_name="arm", gripper_name="gripper", robot_name=f'puppet_right', node=global_node)
+    
+    master_bot_left = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
+                                              robot_name=f'master_left', node=global_node)
+    master_bot_right = InterbotixManipulatorXS(robot_model="wx250s", group_name="arm", gripper_name="gripper",
+                                               robot_name=f'master_right', node=global_node)
+    
+    robot_startup(global_node)
     # saving dataset
     if not os.path.isdir(dataset_dir):
         os.makedirs(dataset_dir)
@@ -82,10 +100,21 @@ def capture_one_episode(dt, max_timesteps, camera_names, dataset_dir, dataset_na
         print(f'Dataset already exist at \n{dataset_path}\nHint: set overwrite to True.')
         exit()
 
-    # move all 4 robots to a starting pose where it is easy to start teleoperation, then wait till both gripper closed
-    opening_ceremony(master_bot_left, master_bot_right, env.puppet_bot_left, env.puppet_bot_right)
+    env = make_real_env(init_node=False, setup_robots=False)
+    # env.start_recorder()
 
+    # multithread
+    # subscriber_thread = threading.Thread(target=env.start_recorder)
+    # subscriber_thread.start()
+
+    # Now you can run other code in the main thread while the subscriber runs in the background
+    # print("Subscriber is running in the background.")
+
+    # move all 4 robots to a starting pose where it is easy to start teleoperation, then wait till both gripper closed
+    opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_bot_right)
+    print("---opening")
     # Data collection
+    # breakpoint()
     ts = env.reset(fake=True)
     timesteps = [ts]
     actions = []
@@ -104,7 +133,7 @@ def capture_one_episode(dt, max_timesteps, camera_names, dataset_dir, dataset_na
     torque_on(master_bot_left)
     torque_on(master_bot_right)
     # Open puppet grippers
-    move_grippers([env.puppet_bot_left, env.puppet_bot_right], [PUPPET_GRIPPER_JOINT_OPEN] * 2, move_time=0.5)
+    # move_grippers([env.puppet_bot_left, env.puppet_bot_right], [PUPPET_GRIPPER_JOINT_OPEN] * 2, move_time=0.5)
 
     freq_mean = print_dt_diagnosis(actual_dt_history)
     if freq_mean < 42:
