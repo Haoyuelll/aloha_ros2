@@ -1,22 +1,23 @@
 import numpy as np
 import time
-from constants import DT
-from interbotix_xs_msgs.msg import JointSingleCommand
+import rclpy
+from rclpy.node import Node
+from collections import deque
+from sensor_msgs.msg import Image
+from sensor_msgs.msg import JointState
+from interbotix_xs_msgs.msg import JointSingleCommand, JointGroupCommand
+from cv_bridge import CvBridge
 
-import IPython
-e = IPython.embed
+DT = 0.01  # Assumed value for DT, make sure to define it if needed
 
-class ImageRecorder:
+class ImageRecorder(Node):
     def __init__(self, init_node=True, is_debug=False):
-        from collections import deque
-        import rospy
-        from cv_bridge import CvBridge
-        from sensor_msgs.msg import Image
+        super().__init__('image_recorder')
         self.is_debug = is_debug
         self.bridge = CvBridge()
         self.camera_names = ['cam_high', 'cam_low', 'cam_left_wrist', 'cam_right_wrist']
-        if init_node:
-            rospy.init_node('image_recorder', anonymous=True)
+        self.camera_subscribers = {}
+
         for cam_name in self.camera_names:
             setattr(self, f'{cam_name}_image', None)
             setattr(self, f'{cam_name}_secs', None)
@@ -31,18 +32,24 @@ class ImageRecorder:
                 callback_func = self.image_cb_cam_right_wrist
             else:
                 raise NotImplementedError
-            rospy.Subscriber(f"/usb_{cam_name}/image_raw", Image, callback_func)
+            # ROS2 way to create subscribers
+            self.camera_subscribers[cam_name] = self.create_subscription(
+                Image,
+                f"/usb_{cam_name}/image_raw",
+                callback_func,
+                10
+            )
             if self.is_debug:
                 setattr(self, f'{cam_name}_timestamps', deque(maxlen=50))
+
         time.sleep(0.5)
 
     def image_cb(self, cam_name, data):
         setattr(self, f'{cam_name}_image', self.bridge.imgmsg_to_cv2(data, desired_encoding='passthrough'))
-        setattr(self, f'{cam_name}_secs', data.header.stamp.secs)
-        setattr(self, f'{cam_name}_nsecs', data.header.stamp.nsecs)
-        # cv2.imwrite('/home/tonyzhao/Desktop/sample.jpg', cv_image)
+        setattr(self, f'{cam_name}_secs', data.header.stamp.sec)
+        setattr(self, f'{cam_name}_nsecs', data.header.stamp.nanosec)
         if self.is_debug:
-            getattr(self, f'{cam_name}_timestamps').append(data.header.stamp.secs + data.header.stamp.secs * 1e-9)
+            getattr(self, f'{cam_name}_timestamps').append(data.header.stamp.sec + data.header.stamp.sec * 1e-9)
 
     def image_cb_cam_high(self, data):
         cam_name = 'cam_high'
@@ -73,16 +80,70 @@ class ImageRecorder:
             return np.mean(diff)
         for cam_name in self.camera_names:
             image_freq = 1 / dt_helper(getattr(self, f'{cam_name}_timestamps'))
-            print(f'{cam_name} {image_freq=:.2f}')
-        print()
+            self.get_logger().info(f'{cam_name} {image_freq=:.2f}')
+        self.get_logger().info('')
 
-class Recorder:
+# --
+class NewRecorder(Node):
+    def __init__(self, side):
+        super().__init__('joint_state_subscriber')
+
+        # Create a subscriber to listen to the /puppet_left/joint_states topic
+        self.joint_state_subscriber = self.create_subscription(
+            JointState,
+            f"/puppet_{side}/joint_states",
+            self.puppet_state_cb,
+            10
+        )
+        self.arm_command_subscriber = self.create_subscription(
+            JointGroupCommand,
+            f"/puppet_{side}/commands/joint_group",
+            self.puppet_arm_commands_cb,
+            10
+        )
+        self.gripper_command_subscriber = self.create_subscription(
+            JointSingleCommand,
+            f"/puppet_{side}/commands/joint_single",
+            self.puppet_gripper_commands_cb,
+            10
+        )
+        # Log a message indicating that the subscriber is active
+        self.get_logger().info('JointState Subscriber has been initialized!')
+
+
+    def joint_state_callback(self, msg):
+        # # This function will be called when a message is received on the topic
+        # self.get_logger().info(f'Received joint states: {msg.position}')
+        # # You can process the JointState data here, e.g., logging the joint positions
+        # # Example: Log joint positions (msg.position is a list of joint positions)
+        # # For simplicity, here we log the first joint position:
+        # if msg.position:
+        #     self.get_logger().info(f'First joint position: {msg.position[0]}')
+        # else:
+        #     self.get_logger().info('No joint positions received.')
+        return True
+    
+    def puppet_state_cb(self, data):
+        self.qpos = data.position
+        self.qvel = data.velocity
+        self.effort = data.effort
+        self.data = data
+
+    def puppet_arm_commands_cb(self, data):
+        self.arm_command = data.cmd
+        if self.is_debug:
+            self.arm_command_timestamps.append(time.time())
+
+    def puppet_gripper_commands_cb(self, data):
+        self.get_logger().info(f"Received JointState message: {data}")
+        self.gripper_command = data.cmd
+        if self.is_debug:
+            self.gripper_command_timestamps.append(time.time())
+# --
+
+class Recorder(Node):
     def __init__(self, side, init_node=True, is_debug=False):
-        from collections import deque
-        import rospy
-        from sensor_msgs.msg import JointState
-        from interbotix_xs_msgs.msg import JointGroupCommand, JointSingleCommand
-
+        super().__init__('recorder')
         self.secs = None
         self.nsecs = None
         self.qpos = None
@@ -91,11 +152,26 @@ class Recorder:
         self.gripper_command = None
         self.is_debug = is_debug
 
-        if init_node:
-            rospy.init_node('recorder', anonymous=True)
-        rospy.Subscriber(f"/puppet_{side}/joint_states", JointState, self.puppet_state_cb)
-        rospy.Subscriber(f"/puppet_{side}/commands/joint_group", JointGroupCommand, self.puppet_arm_commands_cb)
-        rospy.Subscriber(f"/puppet_{side}/commands/joint_single", JointSingleCommand, self.puppet_gripper_commands_cb)
+        # ROS2 subscribers
+        self.joint_state_subscriber = self.create_subscription(
+            JointState,
+            f"/puppet_{side}/joint_states",
+            self.puppet_state_cb,
+            10
+        )
+        self.arm_command_subscriber = self.create_subscription(
+            JointGroupCommand,
+            f"/puppet_{side}/commands/joint_group",
+            self.puppet_arm_commands_cb,
+            10
+        )
+        self.gripper_command_subscriber = self.create_subscription(
+            JointSingleCommand,
+            f"/puppet_{side}/commands/joint_single",
+            self.puppet_gripper_commands_cb,
+            10
+        )
+
         if self.is_debug:
             self.joint_timestamps = deque(maxlen=50)
             self.arm_command_timestamps = deque(maxlen=50)
@@ -116,6 +192,7 @@ class Recorder:
             self.arm_command_timestamps.append(time.time())
 
     def puppet_gripper_commands_cb(self, data):
+        self.get_logger().info(f"Received JointState message: {data}")
         self.gripper_command = data.cmd
         if self.is_debug:
             self.gripper_command_timestamps.append(time.time())
@@ -130,7 +207,11 @@ class Recorder:
         arm_command_freq = 1 / dt_helper(self.arm_command_timestamps)
         gripper_command_freq = 1 / dt_helper(self.gripper_command_timestamps)
 
-        print(f'{joint_freq=:.2f}\n{arm_command_freq=:.2f}\n{gripper_command_freq=:.2f}\n')
+        self.get_logger().info(f'{joint_freq=:.2f}')
+        self.get_logger().info(f'{arm_command_freq=:.2f}')
+        self.get_logger().info(f'{gripper_command_freq=:.2f}')
+
+# Assuming the functions for moving arms, grippers, and setup methods remain unchanged
 
 def get_arm_joint_positions(bot):
     return bot.arm.core.joint_states.position[:6]

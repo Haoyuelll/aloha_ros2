@@ -26,7 +26,13 @@ def prep_robots(master_bot, puppet_bot):
 
     # move arms to starting position
     start_arm_qpos = START_ARM_POSE[:6]
-    move_arms([master_bot, puppet_bot], [start_arm_qpos] * 2, move_time=1)
+    combined_pos = [[p for p in start_arm_qpos]]
+    combined_pos.append([p for p in start_arm_qpos])
+    # -- flip the joint angles
+    combined_pos[1][1] = -combined_pos[1][1]
+    combined_pos[1][2] = -combined_pos[1][2]
+    move_arms([master_bot, puppet_bot], combined_pos, move_time=1)
+
     # move grippers to starting position
     move_grippers([master_bot, puppet_bot], [MASTER_GRIPPER_JOINT_MID, PUPPET_GRIPPER_JOINT_CLOSE], move_time=0.5)
 
@@ -62,6 +68,9 @@ def teleop(robot_side):
     while True:
         # sync joint positions
         master_state_joints = master_bot.core.joint_states.position[:6]
+        # -- flip the joint angles
+        master_state_joints[1] = -master_state_joints[1]
+        master_state_joints[2] = -master_state_joints[2]
         puppet_bot.arm.set_joint_positions(master_state_joints, blocking=False)
         # sync gripper positions
         master_gripper_joint = master_bot.core.joint_states.position[6]
