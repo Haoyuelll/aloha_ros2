@@ -39,6 +39,9 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
     start_arm_qpos = START_ARM_POSE[:6]
     combined_pos = [[p for p in start_arm_qpos]]
     combined_pos.append([p for p in start_arm_qpos])
+    # -- flip the joint angles
+    # combined_pos[1][1] = -combined_pos[1][1]
+    # combined_pos[1][2] = -combined_pos[1][2]
     move_arms([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], combined_pos * 2, move_time=1.5)
     # move_arms([master_bot_left, puppet_bot_left], combined_pos, move_time=1.5)
     # move grippers to starting position
@@ -93,6 +96,9 @@ def gotosleep():
     torque_on(puppet_bot_right)
     torque_on(master_bot_right)
 
+    # move arms to starting position
+    # SLEEP_POSE = [[0, -1.7, 1.57, 0, 0, 0], [0, 1.7, -1.57, 0, 0, 0]]
+
     move_arms([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], SLEEP_POSE * 2, move_time=1.5)
 
     # move grippers to starting position
@@ -115,11 +121,18 @@ def teleop():
     while True:
         # Left side
         master_left = master_bot_left.core.joint_states.position[:6]
+        # -- flip the joint angles
+        # master_left[1] = -master_left[1]
+        # master_left[2] = -master_left[2]
         puppet_bot_left.arm.set_joint_positions(master_left, blocking=False)
 
         # Right side
         master_right = master_bot_right.core.joint_states.position[:6]
+        # -- flip the joint angles
+        # master_right[1] = -master_right[1]
+        # master_right[2] = -master_right[2]
         puppet_bot_right.arm.set_joint_positions(master_right, blocking=False)
+
         
         # sync gripper positions
         master_left_gripper_joint = master_bot_left.core.joint_states.position[6]
@@ -134,6 +147,9 @@ def teleop():
         puppet_bot_right.gripper.core.pub_single.publish(gripper_command)
         # sleep DT
         time.sleep(DT)
+        
+        print(f"Master right: {master_right}")
+        print(f"Master left: {master_left}")
 
 
 if __name__=='__main__':

@@ -3,3 +3,4 @@
 /aloha.egg-info/
 /aloha_scripts/.idea/
 **/__pycache__**
+**/tmp**

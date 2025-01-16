@@ -49,9 +49,6 @@ def opening_ceremony(master_bot_left, master_bot_right, puppet_bot_left, puppet_
     start_arm_qpos = START_ARM_POSE[:6]
     combined_pos = [[p for p in start_arm_qpos]]
     combined_pos.append([p for p in start_arm_qpos])
-    # -- flip the joint angles
-    combined_pos[1][1] = -combined_pos[1][1]
-    combined_pos[1][2] = -combined_pos[1][2]
     move_arms([master_bot_left, puppet_bot_left, master_bot_right, puppet_bot_right], combined_pos * 2, move_time=1.5)
     # move_arms([master_bot_left, puppet_bot_left], combined_pos, move_time=1.5)
     # move grippers to starting position
